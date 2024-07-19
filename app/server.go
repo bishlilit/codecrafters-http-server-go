@@ -14,6 +14,9 @@ import (
 func main() {
 	fmt.Println("Logs from your program will appear here!")
 
+	fileLocation := getDirLocation()
+	fmt.Println("fileLocation: ", fileLocation)
+
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
 		fmt.Println("Failed to bind to port 4221")
@@ -28,13 +31,13 @@ func main() {
 		}
 		
 		fmt.Println("going to start a goroutine")
-		go handleConnection(conn)
+		go handleConnection(conn, fileLocation)
 		fmt.Println("after starting a goroutine")	
 	}
 
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, fileLocation string) {
 	fmt.Println("starting handle connection function")
 	buf := make([]byte, 1024)
 	readCount, err := conn.Read(buf)
@@ -96,6 +99,24 @@ func handleConnection(conn net.Conn) {
 		contentTypeStr = "Content-Type: text/plain"
 		contentLength := strconv.Itoa(len(content))		
 		contentLengthStr = "Content-Length: " + contentLength
+	} else if strings.HasPrefix(requestTarget, "/files") {
+		slashIndex := strings.Index(requestTarget, "/files/")
+		filename := requestTarget[slashIndex + len("/files/"):]
+		fmt.Println("filename: ", filename)
+
+		dat, err := os.ReadFile(fileLocation + filename)
+		if err != nil {
+			fmt.Println("unable to read ", filename, ". err: ", err.Error())
+
+			statusLine = notFoundStatusLine
+		} else {
+			fmt.Print(string(dat))
+			statusLine = okStatusLine
+			content = string(dat)
+			contentTypeStr = "Content-Type: application/octet-stream"
+			contentLength := strconv.Itoa(len(content))		
+			contentLengthStr = "Content-Length: " + contentLength		
+		}
 	} else {
 		statusLine = notFoundStatusLine
 	}
@@ -112,4 +133,24 @@ func handleConnection(conn net.Conn) {
 		os.Exit(1)
 	}
 	fmt.Println("number written: ", n)
+}
+
+func getDirLocation() string {
+	args := os.Args[1:]
+	var directoryLocation string
+	if len(args) == 0 {
+		fmt.Println("You need to specify directory location by --directory")
+		// os.Exit(1)
+		return ""
+	}
+	if args[0] == "--directory" {
+		if len(args) == 1 {
+			fmt.Println("You need to specify directory location value after --directory")
+			// os.Exit(1)
+			return ""
+		}
+		directoryLocation = args[1]
+	}
+
+	return directoryLocation
 }
