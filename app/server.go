@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"slices"
 )
 
 func main() {
@@ -79,7 +80,9 @@ func handleConnection(conn net.Conn, fileLocation string) {
 		fmt.Println("headers: key: ", key, ", value: ", value)
 	}
 
-	encoding := headers["Accept-Encoding"]
+	encodingStr := headers["Accept-Encoding"]
+	encodingStr = strings.Replace(encodingStr, " ", "", -1)
+	encodings := strings.Split(encodingStr, ",")
 	 
 
 	notFoundStatusLine := "HTTP/1.1 404 Not Found"
@@ -153,7 +156,7 @@ func handleConnection(conn net.Conn, fileLocation string) {
 	if contentLengthStr != "" {
 		response += contentLengthStr + "\r\n"
 	}
-	if encoding == "gzip" {
+	if slices.Contains(encodings, "gzip") {
 		response += "Content-Encoding: gzip" +  "\r\n"
 	}
 	response += "\r\n"
