@@ -46,6 +46,22 @@ func main() {
 	
 	requestTarget := strings.Split(lines[0], " ")[1]	
 
+	headersStr := lines[1:len(lines) - 2]   
+
+	_ = lines[len(lines) - 1]
+
+
+	fmt.Println("headerStr: ", headersStr)
+	var headers map[string]string = make(map[string]string)
+	for _, element := range headersStr {
+		colonIndex := strings.Index(element, ":")
+
+		key := strings.TrimSpace(element[:colonIndex])		
+		value := strings.TrimSpace(element[colonIndex + 1:])
+		headers[key] = value
+		fmt.Println("headers: key: ", key, ", value: ", value)
+	}
+
 	notFoundStatusLine := "HTTP/1.1 404 Not Found"
 	okStatusLine := "HTTP/1.1 200 OK"
 
@@ -61,6 +77,13 @@ func main() {
 		path := strings.Split(requestTarget, "/")[2]
 		fmt.Println("path : ", path, len(path))
 		content = path
+		contentTypeStr = "Content-Type: text/plain"
+		contentLength := strconv.Itoa(len(content))		
+		contentLengthStr = "Content-Length: " + contentLength
+	} else if strings.HasPrefix(requestTarget, "/user-agent") {
+		statusLine = okStatusLine
+
+		content = headers["User-Agent"]
 		contentTypeStr = "Content-Type: text/plain"
 		contentLength := strconv.Itoa(len(content))		
 		contentLengthStr = "Content-Length: " + contentLength
