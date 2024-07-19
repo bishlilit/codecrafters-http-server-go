@@ -1,8 +1,6 @@
 package main
 
 import (
-	// "bufio"
-	// "bytes"
 	"fmt"
 	"io"
 	"io/fs"
@@ -81,6 +79,9 @@ func handleConnection(conn net.Conn, fileLocation string) {
 		fmt.Println("headers: key: ", key, ", value: ", value)
 	}
 
+	encoding := headers["Accept-Encoding"]
+	 
+
 	notFoundStatusLine := "HTTP/1.1 404 Not Found"
 	okStatusLine := "HTTP/1.1 200 OK"
 	createdStatusLine := "HTTP/1.1 201 Created"
@@ -121,7 +122,7 @@ func handleConnection(conn net.Conn, fileLocation string) {
 	
 				statusLine = notFoundStatusLine
 			} else {
-				fmt.Print(string(dat))
+				fmt.Println("file content: ", string(dat))
 				statusLine = okStatusLine
 				content = string(dat)
 				contentTypeStr = "Content-Type: application/octet-stream"
@@ -144,7 +145,21 @@ func handleConnection(conn net.Conn, fileLocation string) {
 	}
 	fmt.Println("statusLine: ", statusLine, ", contentType: ", contentTypeStr, ", contentLength: ", contentLengthStr, ", content: ", content)
 	// response := statusLine + "\r\n\r\n" + contentTypeStr + "\r\n" + contentLengthStr + "\r\n\r\n" + content
-	response := statusLine + "\r\n" + contentTypeStr + "\r\n" + contentLengthStr + "\r\n\r\n" + content
+	// response := statusLine + "\r\n" + contentTypeStr + "\r\n" + contentLengthStr + "\r\n\r\n" + content
+	response := statusLine + "\r\n"
+	if contentTypeStr != "" {
+		response += contentTypeStr + "\r\n"
+	}
+	if contentLengthStr != "" {
+		response += contentLengthStr + "\r\n"
+	}
+	if encoding == "gzip" {
+		response += "Content-Encoding: gzip" +  "\r\n"
+	}
+	response += "\r\n"
+	if content != "" {
+		response += content
+	}
 	response2 := "\"" + response + "\""
 	fmt.Println("Writing response to conn: ")
 	fmt.Println(response2)
