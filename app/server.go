@@ -5,6 +5,7 @@ import (
 	// "bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"strconv"
@@ -56,9 +57,15 @@ func handleConnection(conn net.Conn, fileLocation string) {
 	lines := strings.Split(readData, "\r\n")
 	fmt.Println("lines: ", lines)
 	
+	requestMethod := strings.Split(lines[0], " ")[0]
+	fmt.Println("requestMethod: ", requestMethod)
 	requestTarget := strings.Split(lines[0], " ")[1]	
+	fmt.Println("requestTarget: ", requestTarget)
+	
 
 	headersStr := lines[1:len(lines) - 2]   
+
+	requestBody := lines[len(lines) - 1]
 
 	_ = lines[len(lines) - 1]
 
@@ -76,6 +83,9 @@ func handleConnection(conn net.Conn, fileLocation string) {
 
 	notFoundStatusLine := "HTTP/1.1 404 Not Found"
 	okStatusLine := "HTTP/1.1 200 OK"
+	createdStatusLine := "HTTP/1.1 201 Created"
+	methodNotAllowedStatusLine := "HTTP/1.1 405 Method Not Allowed"
+
 
 	var statusLine string
 	fmt.Println("request target: ", requestTarget)
@@ -100,22 +110,34 @@ func handleConnection(conn net.Conn, fileLocation string) {
 		contentLength := strconv.Itoa(len(content))		
 		contentLengthStr = "Content-Length: " + contentLength
 	} else if strings.HasPrefix(requestTarget, "/files") {
-		slashIndex := strings.Index(requestTarget, "/files/")
-		filename := requestTarget[slashIndex + len("/files/"):]
-		fmt.Println("filename: ", filename)
+		if requestMethod == "GET" {
+			slashIndex := strings.Index(requestTarget, "/files/")
+			filename := requestTarget[slashIndex + len("/files/"):]
+			fmt.Println("filename: ", filename)
+	
+			dat, err := os.ReadFile(fileLocation + filename)
+			if err != nil {
+				fmt.Println("unable to read ", filename, ". err: ", err.Error())
+	
+				statusLine = notFoundStatusLine
+			} else {
+				fmt.Print(string(dat))
+				statusLine = okStatusLine
+				content = string(dat)
+				contentTypeStr = "Content-Type: application/octet-stream"
+				contentLength := strconv.Itoa(len(content))		
+				contentLengthStr = "Content-Length: " + contentLength		
+			}	
+		} else if requestMethod == "POST" {
+			slashIndex := strings.Index(requestTarget, "/files/")
+			filename := requestTarget[slashIndex + len("/files/"):]
 
-		dat, err := os.ReadFile(fileLocation + filename)
-		if err != nil {
-			fmt.Println("unable to read ", filename, ". err: ", err.Error())
-
-			statusLine = notFoundStatusLine
+			os.WriteFile(fileLocation + filename, []byte(requestBody), fs.ModeAppend)
+			
+			statusLine = createdStatusLine
 		} else {
-			fmt.Print(string(dat))
-			statusLine = okStatusLine
-			content = string(dat)
-			contentTypeStr = "Content-Type: application/octet-stream"
-			contentLength := strconv.Itoa(len(content))		
-			contentLengthStr = "Content-Length: " + contentLength		
+			fmt.Println("not supported method: ", requestMethod)
+			statusLine = methodNotAllowedStatusLine
 		}
 	} else {
 		statusLine = notFoundStatusLine
