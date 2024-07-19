@@ -20,13 +20,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	conn, err := l.Accept()	
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+	for {
+		conn, err := l.Accept()	
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+		
+		fmt.Println("going to start a goroutine")
+		go handleConnection(conn)
+		fmt.Println("after starting a goroutine")	
 	}
-	defer conn.Close()
 
+}
+
+func handleConnection(conn net.Conn) {
+	fmt.Println("starting handle connection function")
 	buf := make([]byte, 1024)
 	readCount, err := conn.Read(buf)
 	if err != nil {
