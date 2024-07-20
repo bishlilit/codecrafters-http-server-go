@@ -1,14 +1,16 @@
 package main
 
-import (
+import (	
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"io/fs"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
-	"slices"
 )
 
 func main() {
@@ -70,17 +72,17 @@ func handleConnection(conn net.Conn, fileLocation string) {
 
 
 	fmt.Println("headerStr: ", headersStr)
-	var headers map[string]string = make(map[string]string)
+	var requestHeaders map[string]string = make(map[string]string)
 	for _, element := range headersStr {
 		colonIndex := strings.Index(element, ":")
 
 		key := strings.TrimSpace(element[:colonIndex])		
 		value := strings.TrimSpace(element[colonIndex + 1:])
-		headers[key] = value
-		fmt.Println("headers: key: ", key, ", value: ", value)
+		requestHeaders[key] = value
+		fmt.Println("requestHeaders: key: ", key, ", value: ", value)
 	}
 
-	encodingStr := headers["Accept-Encoding"]
+	encodingStr := requestHeaders["Accept-Encoding"]
 	encodingStr = strings.Replace(encodingStr, " ", "", -1)
 	encodings := strings.Split(encodingStr, ",")
 	 
@@ -95,24 +97,21 @@ func handleConnection(conn net.Conn, fileLocation string) {
 	fmt.Println("request target: ", requestTarget)
 	var contentTypeStr string = ""
 	var contentLengthStr string = ""
-	var content string = ""
+	var body string = ""
+	var responseHeaders = make(map[string]string)
 	if requestTarget == "/" {
 		statusLine = okStatusLine	
 	} else if strings.HasPrefix(requestTarget, "/echo") {
 		statusLine = okStatusLine
 		path := strings.Split(requestTarget, "/")[2]
 		fmt.Println("path : ", path, len(path))
-		content = path
-		contentTypeStr = "Content-Type: text/plain"
-		contentLength := strconv.Itoa(len(content))		
-		contentLengthStr = "Content-Length: " + contentLength
+		body = path
+		responseHeaders["Content-Type"] = "text/plain"		
 	} else if strings.HasPrefix(requestTarget, "/user-agent") {
 		statusLine = okStatusLine
 
-		content = headers["User-Agent"]
-		contentTypeStr = "Content-Type: text/plain"
-		contentLength := strconv.Itoa(len(content))		
-		contentLengthStr = "Content-Length: " + contentLength
+		body = requestHeaders["User-Agent"]
+		responseHeaders["Content-Type"] = "text/plain"				
 	} else if strings.HasPrefix(requestTarget, "/files") {
 		if requestMethod == "GET" {
 			slashIndex := strings.Index(requestTarget, "/files/")
@@ -127,10 +126,8 @@ func handleConnection(conn net.Conn, fileLocation string) {
 			} else {
 				fmt.Println("file content: ", string(dat))
 				statusLine = okStatusLine
-				content = string(dat)
-				contentTypeStr = "Content-Type: application/octet-stream"
-				contentLength := strconv.Itoa(len(content))		
-				contentLengthStr = "Content-Length: " + contentLength		
+				body = string(dat)
+				responseHeaders["Content-Type"] = "application/octet-stream"		
 			}	
 		} else if requestMethod == "POST" {
 			slashIndex := strings.Index(requestTarget, "/files/")
@@ -146,33 +143,91 @@ func handleConnection(conn net.Conn, fileLocation string) {
 	} else {
 		statusLine = notFoundStatusLine
 	}
-	fmt.Println("statusLine: ", statusLine, ", contentType: ", contentTypeStr, ", contentLength: ", contentLengthStr, ", content: ", content)
-	// response := statusLine + "\r\n\r\n" + contentTypeStr + "\r\n" + contentLengthStr + "\r\n\r\n" + content
-	// response := statusLine + "\r\n" + contentTypeStr + "\r\n" + contentLengthStr + "\r\n\r\n" + content
-	response := statusLine + "\r\n"
-	if contentTypeStr != "" {
-		response += contentTypeStr + "\r\n"
-	}
-	if contentLengthStr != "" {
-		response += contentLengthStr + "\r\n"
-	}
+	fmt.Println("statusLine: ", statusLine, ", contentType: ", contentTypeStr, ", contentLength: ", contentLengthStr, ", body: ", body)
 	if slices.Contains(encodings, "gzip") {
-		response += "Content-Encoding: gzip" +  "\r\n"
+		responseHeaders["Content-Encoding"] = "gzip"
 	}
-	response += "\r\n"
-	if content != "" {
-		response += content
+	var bodyBytes []byte
+	if body != "" {	
+		if slices.Contains(encodings, "gzip") {
+			zipContent, err := GzipData([]byte(body))
+			if err != nil {
+				fmt.Println("unable to gzip data: ", err.Error())
+				return
+			}	
+			fmt.Println("zip content: ", zipContent.String())
+			bodyBytes = zipContent.Bytes()			
+		} else {
+			bodyBytes = []byte(body)
+		}
 	}
+
+	response := statusLine + "\r\n"
+	if bodyBytes != nil {		
+		responseHeaders["Content-Length"] = strconv.Itoa(len(bodyBytes))
+	}
+	
+	// response += "\r\n"
+	// if content != "" {	
+	// 	if slices.Contains(encodings, "gzip") {
+	// 		zipContent, err := GzipData(content)
+	// 		fmt.Println("zip: ", zipContent)
+	// 		if err != nil {
+	// 			fmt.Println("unable to gzip data: ", err.Error())
+	// 			return
+	// 		}	
+	// 		fmt.Println("zip content: ", zipContent.String())
+	// 		response += zipContent.String()
+	// 	} else {
+	// 		response += content
+	// 	}
+	// }
+
+	var responseByteArray = make([]byte, 0)
+	responseByteArray = append(responseByteArray, []byte(statusLine)...)
+	responseByteArray = append(responseByteArray, []byte("\r\n")...)
+	for key, value := range responseHeaders {
+		header := key + ": " + value
+		fmt.Println("responseHeader: ", header)
+		responseByteArray = append(responseByteArray, []byte(header)...)
+		responseByteArray = append(responseByteArray, []byte("\r\n")...)
+	}
+	responseByteArray = append(responseByteArray, []byte("\r\n")...)
+	if (bodyBytes != nil) {
+		responseByteArray = append(responseByteArray, bodyBytes...)
+	}
+	
 	response2 := "\"" + response + "\""
 	fmt.Println("Writing response to conn: ")
 	fmt.Println(response2)
-	responseByteArray := []byte(response)
+	// responseByteArray := []byte(response)
+	// var responseByteArray []byte
+	fmt.Println(string(responseByteArray))
 	n, err  := conn.Write(responseByteArray)
 	if err != nil {
 		fmt.Println("Error writing response: ", err.Error())
 		os.Exit(1)
 	}
 	fmt.Println("number written: ", n)
+}
+
+func GzipData(data []byte) (bytes.Buffer, error) {
+	fmt.Println("gziping ", data, string(data))
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+
+	_, err := zw.Write(data)
+
+	if err != nil {
+		return buf, err
+	}
+
+	if err := zw.Close(); err != nil {
+		fmt.Println("cannot close zw: ", err.Error())
+		return buf, err	
+	}
+	
+	return buf, err
 }
 
 func getDirLocation() string {
